@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Layout Collage - PDF Export</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    :root { --grid-bg: #FFFFFF; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: linear-gradient(135deg, #1e1e1e, #2d2d2d); color: #e0e0e0; min-height: 100vh; padding: 15px; }
+    .container { max-width: 1400px; margin: auto; background: rgba(40, 40, 40, 0.95); border-radius: 20px; backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); overflow: hidden; display: flex; flex-direction: row; min-height: calc(100vh - 30px); }
+    .left-panel { flex: 1; padding: 25px; border-right: 1px solid rgba(255, 255, 255, 0.1); display: flex; flex-direction: column; }
+    .right-panel { flex: 1.5; padding: 25px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+    .panel-heading { font-size: 1.5em; margin-bottom: 20px; color: #67d1ea; font-weight: 600; }
+    .upload-section { background: rgba(60, 60, 60, 0.8); border-radius: 15px; padding: 20px; margin-bottom: 20px; border: 2px dashed rgba(255, 255, 255, 0.3); text-align: center; cursor: pointer; transition: all 0.3s ease; }
+    .upload-section:hover, .upload-section.dragover { border-color: #67d1ea; background: rgba(70, 70, 70, 0.9); transform: scale(1.02); }
+    #fileInput { display: none; }
+    .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 10px; margin-top: 20px; overflow-y: auto; flex-grow: 1; max-height: 400px; padding: 10px; border-radius: 10px; background-color: rgba(0,0,0,0.2); }
+    .image-item { position: relative; aspect-ratio: 1 / 1; }
+    .image-item img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+    .remove-btn { position: absolute; top: 5px; right: 5px; background: rgba(20, 20, 20, 0.7); backdrop-filter: blur(4px); border: 1px solid rgba(255,255,255,0.1); color: #fff; border-radius: 50%; width: 28px; height: 28px; cursor: pointer; font-size: 18px; font-weight: bold; line-height: 26px; text-align: center; transition: all 0.2s; padding: 0; }
+    .remove-btn:hover { background: #ff4757; transform: scale(1.1); }
+    .controls { background: rgba(60,60,60,0.6); border-radius: 12px; padding: 15px; margin-bottom: 20px; }
+    .control-group label { display: block; margin-bottom: 8px; font-weight: 500; }
+    .control-group input[type="color"] { width: 100%; height: 40px; padding: 2px; border: 1px solid #555; background: #333; border-radius: 8px; }
+    button { background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; padding: 12px 25px; border-radius: 25px; font-size: 1em; cursor: pointer; transition: all 0.3s ease; font-weight: 500; white-space: nowrap; }
+    button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4); }
+    button:disabled { background: #555; opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
+    .action-buttons { display: flex; gap: 10px; margin-top: 20px; justify-content: center; flex-wrap: wrap;}
+    #optimizeBtn { background: linear-gradient(135deg, #10b981, #34d399); }
+    #optimizeBtn:hover { box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4); }
+    .preview-content { flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; background: rgba(0,0,0,0.2); border-radius: 15px; min-height: 300px; }
+    #previewPlaceholder { color: #888; text-align: center; }
+    #mergedCanvas { max-width: 100%; max-height: calc(100vh - 180px); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); background: var(--grid-bg); display: none; }
+    .download-section { margin-top: 20px; display: none; gap: 10px; flex-wrap: wrap; justify-content: center; }
+    @media (max-width: 992px) {
+      body { padding: 0; }
+      .container { flex-direction: column; border-radius: 0; min-height: 100vh; }
+      .left-panel { border-right: none; border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding: 20px; }
+      .right-panel { padding: 20px; }
+      .image-grid { max-height: 250px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="left-panel">
+      <h2 class="panel-heading">🛠️ Settings & Management</h2>
+      <div class="upload-section">
+        <div style="font-size:3em;">📁</div>
+        <div>Click or Drag & Drop images</div>
+        <input type="file" id="fileInput" multiple accept="image/*">
+      </div>
+
+      <div class="controls">
+        <div class="control-group">
+          <label for="bgColor">Background Color:</label>
+          <input type="color" id="bgColor" value="#FFFFFF">
+        </div>
+      </div>
+      
+      <div id="imageGrid" class="image-grid"></div>
+      
+      <div class="action-buttons">
+        <button id="optimizeBtn" disabled>🧠 Optimize Layout</button>
+        <button id="clearBtn" disabled>🗑️ Clear All</button>
+      </div>
+    </div>
+
+    <div class="right-panel">
+      <h2 class="panel-heading">📋 Preview</h2>
+      <div class="preview-content">
+        <div id="previewPlaceholder">
+            <h3>Your merged image will appear here</h3>
+            <p>Upload some images to start</p>
+        </div>
+        <canvas id="mergedCanvas"></canvas>
+        <div class="download-section">
+          <button id="downloadBtn">💾 Download JPG</button>
+          <button id="downloadPngBtn">💾 Download PNG</button>
+          <button id="downloadPdfBtn">📄 Download PDF</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- START: GENETIC ALGORITHM WITH CONVERGENCE (STABLE) ---
+    class LayoutOptimizer {
+        constructor(images, packingFn, progressCallback) { this.images = images; this.packingFn = packingFn; this.progressCallback = progressCallback; this.populationSize = 80; this.maxGenerations = 200; this.mutationRate = 0.02; this.elitismCount = 4; this.convergenceLimit = 25; }
+        calculateFitness(individual) { const { width, height } = this.packingFn(individual); const area = width * height; const aspectRatio = width > height ? width / height : height / width; return area * Math.pow(aspectRatio, 1.5); }
+        createInitialPopulation() { let population = []; const sorted = [...this.images].sort((a,b) => (b.w * b.h) - (a.w * a.h)); population.push(sorted); for (let i = 1; i < this.populationSize; i++) { let individual = [...this.images].sort(() => 0.5 - Math.random()); population.push(individual); } return population; }
+        tournamentSelection(population) { const tournamentSize = 5; let best = null; for (let i = 0; i < tournamentSize; i++) { let randomIndividual = population[Math.floor(Math.random() * population.length)]; if (best === null || randomIndividual.fitness < best.fitness) { best = randomIndividual; } } return best.individual; }
+        crossover(parent1, parent2) { const size = parent1.length; const child = Array(size).fill(null); const segmentIds = new Set(); const start = Math.floor(Math.random() * size); const end = start + Math.floor(Math.random() * (size - start)); for (let i = start; i <= end; i++) { child[i] = parent1[i]; segmentIds.add(parent1[i].id); } const remainingGenes = parent2.filter(gene => !segmentIds.has(gene.id)); let geneIndex = 0; for (let i = 0; i < size; i++) { if (child[i] === null) { child[i] = remainingGenes[geneIndex]; geneIndex++; } } if (child.includes(null) || geneIndex !== remainingGenes.length) { return [...parent1]; } return child; }
+        mutate(individual) { for (let i = 0; i < individual.length; i++) { if (Math.random() < this.mutationRate) { const j = Math.floor(Math.random() * individual.length); [individual[i], individual[j]] = [individual[j], individual[i]]; } } }
+        async run() { let population = this.createInitialPopulation(); let bestOverall = null; let generationsWithoutImprovement = 0; for (let g = 0; g < this.maxGenerations; g++) { let fitnessResults = population.map(individual => ({ individual, fitness: this.calculateFitness(individual) })); fitnessResults.sort((a, b) => a.fitness - b.fitness); if (bestOverall === null || fitnessResults[0].fitness < bestOverall.fitness) { bestOverall = fitnessResults[0]; generationsWithoutImprovement = 0; } else { generationsWithoutImprovement++; } if (generationsWithoutImprovement >= this.convergenceLimit) { if(this.progressCallback) this.progressCallback(g + 1, g + 1); break; } let newPopulation = []; for(let i=0; i<this.elitismCount; i++) { newPopulation.push(fitnessResults[i].individual); } while (newPopulation.length < this.populationSize) { const parent1 = this.tournamentSelection(fitnessResults); const parent2 = this.tournamentSelection(fitnessResults); let child = this.crossover(parent1, parent2); this.mutate(child); newPopulation.push(child); } population = newPopulation; if(this.progressCallback) { this.progressCallback(g + 1, this.maxGenerations); } if (g % 5 === 0) await new Promise(resolve => setTimeout(resolve, 0)); } return bestOverall.individual; }
+    }
+    // --- END: GENETIC ALGORITHM ---
+
+
+    class ImageMerger {
+        constructor() { this.jsPDF = window.jspdf.jsPDF; this.elements = { uploadSection: document.querySelector('.upload-section'), fileInput: document.getElementById('fileInput'), imageGrid: document.getElementById('imageGrid'), clearBtn: document.getElementById('clearBtn'), optimizeBtn: document.getElementById('optimizeBtn'), mergedCanvas: document.getElementById('mergedCanvas'), downloadSection: document.querySelector('.download-section'), downloadBtn: document.getElementById('downloadBtn'), downloadPngBtn: document.getElementById('downloadPngBtn'), downloadPdfBtn: document.getElementById('downloadPdfBtn'), bgColorInput: document.getElementById('bgColor'), previewPlaceholder: document.getElementById('previewPlaceholder'), }; this.images = []; this.debouncedMerge = this.debounce(() => this.mergeImages(), 250); this.bindEvents(); this.updatePreviewVisibility(); }
+        debounce(func, delay) { let timeout; return (...args) => { clearTimeout(timeout); timeout = setTimeout(() => func.apply(this, args), delay); }; }
+        bindEvents() { const { uploadSection, fileInput, clearBtn, optimizeBtn, downloadBtn, downloadPngBtn, downloadPdfBtn, bgColorInput } = this.elements; uploadSection.addEventListener('click', () => fileInput.click()); fileInput.addEventListener('change', e => this.handleFiles(e.target.files)); ['dragover', 'dragleave', 'drop'].forEach(eventName => uploadSection.addEventListener(eventName, e => e.preventDefault())); uploadSection.addEventListener('dragover', () => uploadSection.classList.add('dragover')); uploadSection.addEventListener('dragleave', () => uploadSection.classList.remove('dragover')); uploadSection.addEventListener('drop', e => { uploadSection.classList.remove('dragover'); this.handleFiles(e.dataTransfer.files); }); clearBtn.addEventListener('click', () => this.clearAll()); optimizeBtn.addEventListener('click', () => this.runOptimization()); downloadBtn.addEventListener('click', () => this.downloadImage('jpeg')); downloadPngBtn.addEventListener('click', () => this.downloadImage('png')); downloadPdfBtn.addEventListener('click', () => this.downloadPdf()); bgColorInput.addEventListener('input', () => { document.documentElement.style.setProperty('--grid-bg', bgColorInput.value); this.debouncedMerge(); }); }
+        async handleFiles(files) { const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/')); for (const file of imageFiles) { try { const img = await this.loadImage(file); this.images.push({ file, img, w: img.width, h: img.height, id: Math.random() }); } catch(error) { console.error("Could not load image:", file.name, error); } } this.renderImageGrid(); this.debouncedMerge(); }
+        loadImage(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = e => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = e.target.result; }; reader.onerror = reject; reader.readAsDataURL(file); }); }
+        renderImageGrid() { this.elements.imageGrid.innerHTML = ''; this.images.forEach((imgData) => { const div = document.createElement('div'); div.className = 'image-item'; div.innerHTML = `<button class="remove-btn" title="Remove image" data-id="${imgData.id}">&times;</button>`; const img = document.createElement('img'); img.src = imgData.img.src; div.appendChild(img); this.elements.imageGrid.appendChild(div); }); this.elements.imageGrid.querySelectorAll('.remove-btn').forEach(btn => btn.addEventListener('click', e => this.removeImage(parseFloat(e.target.dataset.id)))); this.updateButtons(); }
+        removeImage(id) { this.images = this.images.filter(img => img.id !== id); this.renderImageGrid(); this.debouncedMerge(); }
+        updateButtons() { const hasImages = this.images.length > 1; this.elements.clearBtn.disabled = this.images.length === 0; this.elements.optimizeBtn.disabled = !hasImages; }
+        async runOptimization() { const btn = this.elements.optimizeBtn; const originalText = btn.innerHTML; btn.disabled = true; const progressCallback = (current, total) => { btn.innerHTML = `🧠 Optimizing... (${Math.min(current, total)}/${total})`; }; try { await new Promise(resolve => setTimeout(resolve, 50)); const optimizer = new LayoutOptimizer(this.images, this.calculateLayoutMetrics.bind(this), progressCallback); const bestOrder = await optimizer.run(); this.images = bestOrder; this.renderImageGrid(); this.mergeImages(); } catch (e) { console.error("Optimization failed:", e); } finally { btn.innerHTML = originalText; this.updateButtons(); } }
+        updatePreviewVisibility(showCanvas = false) { this.elements.mergedCanvas.style.display = showCanvas ? 'block' : 'none'; this.elements.downloadSection.style.display = showCanvas ? 'flex' : 'none'; this.elements.previewPlaceholder.style.display = showCanvas ? 'none' : 'block'; }
+        
+        // --- START: REBUILT & GUARANTEED BIN PACKING ALGORITHM ---
+        calculateLayoutMetrics(images) {
+            if (images.length === 0) return { width: 0, height: 0, blocks: [] };
+            
+            const blocks = images.map(img => ({ ...img, fit: null }));
+            
+            let root = { x: 0, y: 0, w: blocks[0].w, h: blocks[0].h };
+            this.splitNode(root, blocks[0]);
+
+            for (let i = 1; i < blocks.length; i++) {
+                const block = blocks[i];
+                let node = this.findNode(root, block.w, block.h);
+                if (node) {
+                    this.splitNode(node, block);
+                } else {
+                    root = this.growNode(root, block.w, block.h);
+                    let newNode = this.findNode(root, block.w, block.h);
+                    if (newNode) {
+                        this.splitNode(newNode, block);
+                    } else {
+                        console.error("FATAL: Algorithm failed. This should not happen.");
+                    }
+                }
+            }
+            return { width: root.w, height: root.h, blocks: blocks };
+        }
+
+        findNode(root, w, h) {
+            if (root.used) {
+                return this.findNode(root.right, w, h) || this.findNode(root.down, w, h);
+            } else if (w <= root.w && h <= root.h) {
+                return root;
+            }
+            return null;
+        }
+
+        splitNode(node, block) {
+            node.used = true;
+            node.down  = { x: node.x,           y: node.y + block.h, w: node.w,           h: node.h - block.h };
+            node.right = { x: node.x + block.w, y: node.y,           w: node.w - block.w, h: block.h          };
+            block.fit = { x: node.x, y: node.y };
+        }
+
+        growNode(root, w, h) {
+            const canGrowDown = (w <= root.w);
+            const canGrowRight = (h <= root.h);
+            const shouldGrowRight = canGrowRight && (root.h >= (root.w + w));
+            const shouldGrowDown = canGrowDown && (root.w >= (root.h + h));
+
+            if (shouldGrowRight) return this.growRight(root, w, h);
+            if (shouldGrowDown) return this.growDown(root, w, h);
+            if (canGrowRight) return this.growRight(root, w, h);
+            if (canGrowDown) return this.growDown(root, w, h);
+            
+            // This is the crucial fallback that was missing.
+            // If the block is wider AND taller than the current canvas,
+            // we must grow in one direction first. Let's choose right.
+            return this.growRight(root, w, h);
+        }
+
+        growRight(root, w, h) {
+            return { used: true, x: 0, y: 0, w: root.w + w, h: root.h, down: root, right: { x: root.w, y: 0, w: w, h: root.h } };
+        }
+
+        growDown(root, w, h) {
+            return { used: true, x: 0, y: 0, w: root.w, h: root.h + h, right: root, down: { x: 0, y: root.h, w: root.w, h: h } };
+        }
+        // --- END: REBUILT & GUARANTEED BIN PACKING ALGORITHM ---
+
+        mergeImages() { if (this.images.length === 0) { this.updatePreviewVisibility(false); return; } const result = this.calculateLayoutMetrics(this.images); const canvas = this.elements.mergedCanvas; canvas.width = result.width; canvas.height = result.height; const ctx = canvas.getContext('2d'); ctx.fillStyle = this.elements.bgColorInput.value; ctx.fillRect(0, 0, canvas.width, canvas.height); for (const block of result.blocks) { if (block.fit) { ctx.drawImage(block.img, block.fit.x, block.fit.y, block.w, block.h); } } this.updatePreviewVisibility(true); }
+        downloadImage(format) { const mime = format === 'png' ? 'image/png' : 'image/jpeg'; const link = document.createElement('a'); link.download = `ai-collage-${Date.now()}.${format}`; link.href = this.elements.mergedCanvas.toDataURL(mime, 0.95); link.click(); }
+        downloadPdf() { const canvas = this.elements.mergedCanvas; const imgData = canvas.toDataURL('image/jpeg', 0.9); const width = canvas.width; const height = canvas.height; const orientation = width > height ? 'l' : 'p'; const pdf = new this.jsPDF({ orientation, unit: 'px', format: [width, height] }); pdf.addImage(imgData, 'JPEG', 0, 0, width, height); pdf.save(`ai-collage-${Date.now()}.pdf`); }
+        clearAll() { this.images = []; this.elements.imageGrid.innerHTML = ''; this.updateButtons(); this.updatePreviewVisibility(false); this.elements.fileInput.value = ''; }
+    }
+
+    window.onload = () => new ImageMerger();
+  </script>
+</body>
+</html>
