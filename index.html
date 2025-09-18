@@ -86,7 +86,7 @@
   </div>
 
   <script>
-    // --- START: GENETIC ALGORITHM WITH CONVERGENCE (STABLE) ---
+    // --- START: GENETIC ALGORITHM (STABLE) ---
     class LayoutOptimizer {
         constructor(images, packingFn, progressCallback) { this.images = images; this.packingFn = packingFn; this.progressCallback = progressCallback; this.populationSize = 80; this.maxGenerations = 200; this.mutationRate = 0.02; this.elitismCount = 4; this.convergenceLimit = 25; }
         calculateFitness(individual) { const { width, height } = this.packingFn(individual); const area = width * height; const aspectRatio = width > height ? width / height : height / width; return area * Math.pow(aspectRatio, 1.5); }
@@ -111,74 +111,65 @@
         async runOptimization() { const btn = this.elements.optimizeBtn; const originalText = btn.innerHTML; btn.disabled = true; const progressCallback = (current, total) => { btn.innerHTML = `🧠 Optimizing... (${Math.min(current, total)}/${total})`; }; try { await new Promise(resolve => setTimeout(resolve, 50)); const optimizer = new LayoutOptimizer(this.images, this.calculateLayoutMetrics.bind(this), progressCallback); const bestOrder = await optimizer.run(); this.images = bestOrder; this.renderImageGrid(); this.mergeImages(); } catch (e) { console.error("Optimization failed:", e); } finally { btn.innerHTML = originalText; this.updateButtons(); } }
         updatePreviewVisibility(showCanvas = false) { this.elements.mergedCanvas.style.display = showCanvas ? 'block' : 'none'; this.elements.downloadSection.style.display = showCanvas ? 'flex' : 'none'; this.elements.previewPlaceholder.style.display = showCanvas ? 'none' : 'block'; }
         
-        // --- START: REBUILT & GUARANTEED BIN PACKING ALGORITHM ---
+        // --- START: SIMPLE & WORKING BIN PACKING ALGORITHM ---
         calculateLayoutMetrics(images) {
-            if (images.length === 0) return { width: 0, height: 0, blocks: [] };
-            
+            if (images.length === 0) {
+                return { width: 0, height: 0, blocks: [] };
+            }
+
             const blocks = images.map(img => ({ ...img, fit: null }));
             
-            let root = { x: 0, y: 0, w: blocks[0].w, h: blocks[0].h };
-            this.splitNode(root, blocks[0]);
+            if (blocks.length === 1) {
+                blocks[0].fit = { x: 0, y: 0 };
+                return { width: blocks[0].w, height: blocks[0].h, blocks };
+            }
 
-            for (let i = 1; i < blocks.length; i++) {
+            // Simple grid-based packing
+            let currentX = 0;
+            let currentY = 0;
+            let rowHeight = 0;
+            let maxWidth = 0;
+            let totalHeight = 0;
+
+            // Calculate approximate canvas width based on total area
+            const totalArea = blocks.reduce((sum, block) => sum + (block.w * block.h), 0);
+            const avgDimension = Math.sqrt(totalArea);
+            const targetWidth = avgDimension * 1.2; // Slightly wider ratio
+
+            for (let i = 0; i < blocks.length; i++) {
                 const block = blocks[i];
-                let node = this.findNode(root, block.w, block.h);
-                if (node) {
-                    this.splitNode(node, block);
-                } else {
-                    root = this.growNode(root, block.w, block.h);
-                    let newNode = this.findNode(root, block.w, block.h);
-                    if (newNode) {
-                        this.splitNode(newNode, block);
-                    } else {
-                        console.error("FATAL: Algorithm failed. This should not happen.");
-                    }
+                
+                // Check if we need to move to next row
+                if (currentX + block.w > targetWidth && currentX > 0) {
+                    currentX = 0;
+                    currentY += rowHeight;
+                    rowHeight = 0;
                 }
+
+                // Place the block
+                block.fit = { x: currentX, y: currentY };
+                
+                // Update tracking variables
+                currentX += block.w;
+                rowHeight = Math.max(rowHeight, block.h);
+                maxWidth = Math.max(maxWidth, currentX);
             }
-            return { width: root.w, height: root.h, blocks: blocks };
+
+            totalHeight = currentY + rowHeight;
+
+            return { 
+                width: Math.max(maxWidth, Math.min(...blocks.map(b => b.w))), 
+                height: totalHeight, 
+                blocks 
+            };
         }
 
-        findNode(root, w, h) {
-            if (root.used) {
-                return this.findNode(root.right, w, h) || this.findNode(root.down, w, h);
-            } else if (w <= root.w && h <= root.h) {
-                return root;
-            }
-            return null;
-        }
-
-        splitNode(node, block) {
-            node.used = true;
-            node.down  = { x: node.x,           y: node.y + block.h, w: node.w,           h: node.h - block.h };
-            node.right = { x: node.x + block.w, y: node.y,           w: node.w - block.w, h: block.h          };
-            block.fit = { x: node.x, y: node.y };
-        }
-
-        growNode(root, w, h) {
-            const canGrowDown = (w <= root.w);
-            const canGrowRight = (h <= root.h);
-            const shouldGrowRight = canGrowRight && (root.h >= (root.w + w));
-            const shouldGrowDown = canGrowDown && (root.w >= (root.h + h));
-
-            if (shouldGrowRight) return this.growRight(root, w, h);
-            if (shouldGrowDown) return this.growDown(root, w, h);
-            if (canGrowRight) return this.growRight(root, w, h);
-            if (canGrowDown) return this.growDown(root, w, h);
-            
-            // This is the crucial fallback that was missing.
-            // If the block is wider AND taller than the current canvas,
-            // we must grow in one direction first. Let's choose right.
-            return this.growRight(root, w, h);
-        }
-
-        growRight(root, w, h) {
-            return { used: true, x: 0, y: 0, w: root.w + w, h: root.h, down: root, right: { x: root.w, y: 0, w: w, h: root.h } };
-        }
-
-        growDown(root, w, h) {
-            return { used: true, x: 0, y: 0, w: root.w, h: root.h + h, right: root, down: { x: 0, y: root.h, w: root.w, h: h } };
-        }
-        // --- END: REBUILT & GUARANTEED BIN PACKING ALGORITHM ---
+        // Unused but kept for compatibility
+        findNode(root, w, h) { return null; }
+        splitNode(node, w, h) { return null; }
+        growRight(root, w, h) { return null; }
+        growDown(root, w, h) { return null; }
+        // --- END: SIMPLE & WORKING BIN PACKING ALGORITHM ---
 
         mergeImages() { if (this.images.length === 0) { this.updatePreviewVisibility(false); return; } const result = this.calculateLayoutMetrics(this.images); const canvas = this.elements.mergedCanvas; canvas.width = result.width; canvas.height = result.height; const ctx = canvas.getContext('2d'); ctx.fillStyle = this.elements.bgColorInput.value; ctx.fillRect(0, 0, canvas.width, canvas.height); for (const block of result.blocks) { if (block.fit) { ctx.drawImage(block.img, block.fit.x, block.fit.y, block.w, block.h); } } this.updatePreviewVisibility(true); }
         downloadImage(format) { const mime = format === 'png' ? 'image/png' : 'image/jpeg'; const link = document.createElement('a'); link.download = `ai-collage-${Date.now()}.${format}`; link.href = this.elements.mergedCanvas.toDataURL(mime, 0.95); link.click(); }
