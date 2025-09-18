@@ -111,65 +111,153 @@
         async runOptimization() { const btn = this.elements.optimizeBtn; const originalText = btn.innerHTML; btn.disabled = true; const progressCallback = (current, total) => { btn.innerHTML = `🧠 Optimizing... (${Math.min(current, total)}/${total})`; }; try { await new Promise(resolve => setTimeout(resolve, 50)); const optimizer = new LayoutOptimizer(this.images, this.calculateLayoutMetrics.bind(this), progressCallback); const bestOrder = await optimizer.run(); this.images = bestOrder; this.renderImageGrid(); this.mergeImages(); } catch (e) { console.error("Optimization failed:", e); } finally { btn.innerHTML = originalText; this.updateButtons(); } }
         updatePreviewVisibility(showCanvas = false) { this.elements.mergedCanvas.style.display = showCanvas ? 'block' : 'none'; this.elements.downloadSection.style.display = showCanvas ? 'flex' : 'none'; this.elements.previewPlaceholder.style.display = showCanvas ? 'none' : 'block'; }
         
-        // --- START: SIMPLE & WORKING BIN PACKING ALGORITHM ---
+        // --- START: FIXED BIN PACKING ALGORITHM ---
         calculateLayoutMetrics(images) {
             if (images.length === 0) {
                 return { width: 0, height: 0, blocks: [] };
             }
 
-            const blocks = images.map(img => ({ ...img, fit: null }));
-            
-            if (blocks.length === 1) {
-                blocks[0].fit = { x: 0, y: 0 };
-                return { width: blocks[0].w, height: blocks[0].h, blocks };
-            }
+            // Sort images by area (largest first) for better packing
+            const blocks = images.map(img => ({ ...img, fit: null }))
+                .sort((a, b) => (b.w * b.h) - (a.w * a.h));
 
-            // Simple grid-based packing
-            let currentX = 0;
-            let currentY = 0;
-            let rowHeight = 0;
-            let maxWidth = 0;
-            let totalHeight = 0;
+            // Initialize with first block
+            let root = { 
+                x: 0, 
+                y: 0, 
+                w: blocks[0].w, 
+                h: blocks[0].h, 
+                used: true // Mark as used since we're placing the first block
+            };
 
-            // Calculate approximate canvas width based on total area
-            const totalArea = blocks.reduce((sum, block) => sum + (block.w * block.h), 0);
-            const avgDimension = Math.sqrt(totalArea);
-            const targetWidth = avgDimension * 1.2; // Slightly wider ratio
+            // Place first block
+            blocks[0].fit = { x: 0, y: 0 };
 
-            for (let i = 0; i < blocks.length; i++) {
+            // Process remaining blocks
+            for (let i = 1; i < blocks.length; i++) {
                 const block = blocks[i];
+                let node = this.findNode(root, block.w, block.h);
                 
-                // Check if we need to move to next row
-                if (currentX + block.w > targetWidth && currentX > 0) {
-                    currentX = 0;
-                    currentY += rowHeight;
-                    rowHeight = 0;
-                }
+                if (node) {
+                    const position = this.splitNode(node, block.w, block.h);
+                    if (position) {
+                        block.fit = position;
+                    }
+                } else {
+                    // Need to grow the root
+                    const canGrowDown = (block.w <= root.w);
+                    const canGrowRight = (block.h <= root.h);
+                    
+                    const shouldGrowRight = canGrowRight && (root.h >= (root.w + block.w));
+                    const shouldGrowDown = canGrowDown && (root.w >= (root.h + block.h));
 
-                // Place the block
-                block.fit = { x: currentX, y: currentY };
-                
-                // Update tracking variables
-                currentX += block.w;
-                rowHeight = Math.max(rowHeight, block.h);
-                maxWidth = Math.max(maxWidth, currentX);
+                    if (shouldGrowRight) {
+                        root = this.growRight(root, block.w, block.h);
+                    } else if (shouldGrowDown) {
+                        root = this.growDown(root, block.w, block.h);
+                    } else if (canGrowRight) {
+                        root = this.growRight(root, block.w, block.h);
+                    } else if (canGrowDown) {
+                        root = this.growDown(root, block.w, block.h);
+                    } else {
+                        // Can't fit in either direction, grow right by default
+                        root = this.growRight(root, block.w, block.h);
+                    }
+
+                    // Try to find a node again after growing
+                    node = this.findNode(root, block.w, block.h);
+                    if (node) {
+                        const position = this.splitNode(node, block.w, block.h);
+                        if (position) {
+                            block.fit = position;
+                        }
+                    }
+                }
             }
 
-            totalHeight = currentY + rowHeight;
+            return { width: root.w, height: root.h, blocks: blocks };
+        }
 
-            return { 
-                width: Math.max(maxWidth, Math.min(...blocks.map(b => b.w))), 
-                height: totalHeight, 
-                blocks 
+        findNode(root, w, h) {
+            if (!root) return null;
+            
+            if (root.used) {
+                const rightResult = root.right ? this.findNode(root.right, w, h) : null;
+                const downResult = root.down ? this.findNode(root.down, w, h) : null;
+                return rightResult || downResult;
+            } else if ((w <= root.w) && (h <= root.h)) {
+                return root;
+            } else {
+                return null;
+            }
+        }
+
+        splitNode(node, w, h) {
+            if (!node) return null;
+            
+            node.used = true;
+            
+            // Create down node only if there's remaining height
+            if (node.h - h > 0) {
+                node.down = {
+                    x: node.x,
+                    y: node.y + h,
+                    w: node.w,
+                    h: node.h - h,
+                    used: false
+                };
+            }
+            
+            // Create right node only if there's remaining width
+            if (node.w - w > 0) {
+                node.right = {
+                    x: node.x + w,
+                    y: node.y,
+                    w: node.w - w,
+                    h: h,
+                    used: false
+                };
+            }
+            
+            return { x: node.x, y: node.y };
+        }
+
+        growRight(root, w, h) {
+            return {
+                used: true,
+                x: 0,
+                y: 0,
+                w: root.w + w,
+                h: root.h,
+                down: root,
+                right: {
+                    x: root.w,
+                    y: 0,
+                    w: w,
+                    h: root.h,
+                    used: false
+                }
             };
         }
 
-        // Unused but kept for compatibility
-        findNode(root, w, h) { return null; }
-        splitNode(node, w, h) { return null; }
-        growRight(root, w, h) { return null; }
-        growDown(root, w, h) { return null; }
-        // --- END: SIMPLE & WORKING BIN PACKING ALGORITHM ---
+        growDown(root, w, h) {
+            return {
+                used: true,
+                x: 0,
+                y: 0,
+                w: root.w,
+                h: root.h + h,
+                right: root,
+                down: {
+                    x: 0,
+                    y: root.h,
+                    w: root.w,
+                    h: h,
+                    used: false
+                }
+            };
+        }
+        // --- END: FIXED BIN PACKING ALGORITHM ---
 
         mergeImages() { if (this.images.length === 0) { this.updatePreviewVisibility(false); return; } const result = this.calculateLayoutMetrics(this.images); const canvas = this.elements.mergedCanvas; canvas.width = result.width; canvas.height = result.height; const ctx = canvas.getContext('2d'); ctx.fillStyle = this.elements.bgColorInput.value; ctx.fillRect(0, 0, canvas.width, canvas.height); for (const block of result.blocks) { if (block.fit) { ctx.drawImage(block.img, block.fit.x, block.fit.y, block.w, block.h); } } this.updatePreviewVisibility(true); }
         downloadImage(format) { const mime = format === 'png' ? 'image/png' : 'image/jpeg'; const link = document.createElement('a'); link.download = `ai-collage-${Date.now()}.${format}`; link.href = this.elements.mergedCanvas.toDataURL(mime, 0.95); link.click(); }
