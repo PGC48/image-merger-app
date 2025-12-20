@@ -44,6 +44,8 @@
       overflow: hidden;
       display: flex;
       transition: background 0.3s, color 0.3s;
+      /* Prevent elastic scrolling on Mac/iPad */
+      overscroll-behavior: none;
     }
 
     .app-container {
@@ -223,8 +225,14 @@
         linear-gradient(var(--bg-dots) 1px, transparent 1px),
         linear-gradient(90deg, var(--bg-dots) 1px, transparent 1px);
       background-size: 40px 40px;
+      
       overflow: hidden;
-      touch-action: none;
+      
+      /* iPad/Mobile Touch Fixes */
+      touch-action: none; /* Disables browser scrolling/zooming */
+      -webkit-user-select: none; /* Prevent text selection */
+      user-select: none;
+      
       cursor: grab;
       display: flex;
       align-items: center;
@@ -236,10 +244,12 @@
     .canvas-wrapper {
       transform-origin: center center;
       box-shadow: 0 0 80px var(--shadow);
+      /* Improve touch rendering */
+      will-change: transform;
     }
     #previewCanvas { display: block; pointer-events: none; }
 
-    /* --- TOOLBAR (Bug Fixed) --- */
+    /* --- TOOLBAR --- */
     .toolbar {
       position: absolute;
       bottom: 40px; 
@@ -398,7 +408,7 @@
     </div>
 
     <div class="viewport" id="viewport">
-      <div class="view-info">Scroll to Zoom • Drag Canvas</div>
+      <div class="view-info">2 Fingers to Zoom • 1 Finger to Drag</div>
       
       <div class="canvas-wrapper" id="canvasWrapper">
         <canvas id="previewCanvas"></canvas>
@@ -423,7 +433,7 @@
         }
     });
 
-    // --- 1. DRAG TOOLBAR (Coordinate Fix) ---
+    // --- 1. DRAG TOOLBAR ---
     class DraggableToolbar {
         constructor(id) {
             this.el = document.getElementById(id);
@@ -435,27 +445,33 @@
             window.addEventListener('mousemove', this.onMove.bind(this));
             window.addEventListener('mouseup', this.onEnd.bind(this));
             window.addEventListener('resize', this.clampPosition.bind(this));
+            
+            // Touch support for Toolbar
+            this.el.addEventListener('touchstart', (e) => this.onStart(e), { passive: false });
+            window.addEventListener('touchmove', (e) => this.onMove(e), { passive: false });
+            window.addEventListener('touchend', (e) => this.onEnd(e));
         }
 
         onStart(e) {
             if(window.innerWidth <= 768) return; 
             if(e.target.tagName === 'BUTTON' || e.target.closest('button')) return; 
             
-            e.preventDefault(); 
+            // Support both Mouse and Touch
+            const evt = e.type.includes('touch') ? e.touches[0] : e;
+            
+            if(!e.type.includes('touch')) e.preventDefault(); 
+
             this.isDragging = true;
             
             const rect = this.el.getBoundingClientRect();
-            // Important: offsetParent is the .viewport container
             const parentRect = this.el.offsetParent.getBoundingClientRect();
             
-            this.mouseOffsetX = e.clientX - rect.left;
-            this.mouseOffsetY = e.clientY - rect.top;
+            this.mouseOffsetX = evt.clientX - rect.left;
+            this.mouseOffsetY = evt.clientY - rect.top;
 
-            // Fix Jump: Calculate position relative to Parent (Viewport), not Window
             const relLeft = rect.left - parentRect.left;
             const relTop = rect.top - parentRect.top;
 
-            // Apply Relative Position
             this.el.style.transform = 'none';
             this.el.style.bottom = 'auto';
             this.el.style.right = 'auto';
@@ -467,24 +483,20 @@
 
         onMove(e) {
             if (!this.isDragging) return;
-            e.preventDefault();
+            e.preventDefault(); // Stop Scroll
 
-            // We need to calculate bounds relative to the parent container
+            const evt = e.type.includes('touch') ? e.touches[0] : e;
             const parentRect = this.el.offsetParent.getBoundingClientRect();
             
-            // Mouse Position in Screen coords
-            const screenX = e.clientX;
-            const screenY = e.clientY;
+            const screenX = evt.clientX;
+            const screenY = evt.clientY;
 
-            // Desired Element Left/Top in Screen coords
             const desiredScreenLeft = screenX - this.mouseOffsetX;
             const desiredScreenTop = screenY - this.mouseOffsetY;
 
-            // Convert to Parent-Relative coords
             let newLeft = desiredScreenLeft - parentRect.left;
             let newTop = desiredScreenTop - parentRect.top;
 
-            // Bounds relative to parent size
             const maxLeft = parentRect.width - this.el.offsetWidth;
             const maxTop = parentRect.height - this.el.offsetHeight;
             const padding = 10;
@@ -509,21 +521,11 @@
                 this.el.style.transform = 'translateX(-50%)';
                 this.el.style.bottom = '20px';
                 this.el.style.top = 'auto';
-                return;
-            }
-            // Auto bounce back if resizing hides it
-            // Simple reset to center bottom if lost
-            const rect = this.el.getBoundingClientRect();
-            if(rect.top < 0 || rect.left < 0 || rect.right > window.innerWidth || rect.bottom > window.innerHeight) {
-                 this.el.style.left = '50%';
-                 this.el.style.top = 'auto';
-                 this.el.style.bottom = '40px';
-                 this.el.style.transform = 'translateX(-50%)';
             }
         }
     }
 
-    // --- 2. VIEWPORT ---
+    // --- 2. VIEWPORT (Enhanced for iPad/Touch) ---
     class ViewportController {
         constructor(viewportId, wrapperId) {
             this.viewport = document.getElementById(viewportId);
@@ -531,13 +533,21 @@
             this.scale = 0.5; 
             this.panX = 0;
             this.panY = 0;
+            
+            // State
             this.isPanning = false;
             this.lastX = 0;
             this.lastY = 0;
+            
+            // Pinch State
+            this.initialPinchDist = 0;
+            this.initialScale = 1;
+
             this.bindEvents();
         }
 
         bindEvents() {
+            // MOUSE
             this.viewport.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 const delta = -e.deltaY;
@@ -570,6 +580,69 @@
                 this.isPanning = false;
                 this.viewport.style.cursor = 'grab';
             });
+
+            // TOUCH (iPad / Mobile)
+            this.viewport.addEventListener('touchstart', (e) => {
+                if(e.target.closest('.toolbar')) return;
+                
+                // Prevent default to stop native browser zoom/scroll
+                if(e.cancelable) e.preventDefault();
+
+                if (e.touches.length === 1) {
+                    // Single Touch = Pan
+                    this.isPanning = true;
+                    this.lastX = e.touches[0].clientX;
+                    this.lastY = e.touches[0].clientY;
+                } else if (e.touches.length === 2) {
+                    // Two Finger = Pinch
+                    this.isPanning = false; // Stop panning
+                    this.initialPinchDist = this.getDist(e.touches);
+                    this.initialScale = this.scale;
+                }
+            }, { passive: false });
+
+            this.viewport.addEventListener('touchmove', (e) => {
+                if(e.target.closest('.toolbar')) return;
+                if(e.cancelable) e.preventDefault();
+
+                if (e.touches.length === 1 && this.isPanning) {
+                    // Pan
+                    const dx = e.touches[0].clientX - this.lastX;
+                    const dy = e.touches[0].clientY - this.lastY;
+                    this.panX += dx;
+                    this.panY += dy;
+                    this.lastX = e.touches[0].clientX;
+                    this.lastY = e.touches[0].clientY;
+                    this.checkBounds();
+                    this.updateTransform(this.scale, this.panX, this.panY);
+                } else if (e.touches.length === 2) {
+                    // Pinch
+                    const currentDist = this.getDist(e.touches);
+                    if (this.initialPinchDist > 0) {
+                        const scaleFactor = currentDist / this.initialPinchDist;
+                        const newScale = this.initialScale * scaleFactor;
+                        this.updateTransform(newScale, this.panX, this.panY);
+                    }
+                }
+            }, { passive: false });
+
+            this.viewport.addEventListener('touchend', (e) => {
+                if(e.touches.length === 0) {
+                    this.isPanning = false;
+                } else if(e.touches.length === 1) {
+                    // Switch back to pan if one finger remains
+                    this.isPanning = true;
+                    this.lastX = e.touches[0].clientX;
+                    this.lastY = e.touches[0].clientY;
+                }
+            });
+        }
+
+        getDist(touches) {
+            return Math.hypot(
+                touches[0].clientX - touches[1].clientX,
+                touches[0].clientY - touches[1].clientY
+            );
         }
 
         checkBounds() {
@@ -819,9 +892,7 @@
 
             // --- AUTO RESOLUTION LOGIC ---
             if (targetW === 0) {
-                // Calculate ideal width based on total image area
                 const totalArea = sorted.reduce((sum, img) => sum + (img.w * img.h), 0);
-                
                 if (fixedRatio) {
                     targetW = Math.ceil(Math.sqrt(totalArea * ratioVal * 1.1));
                 } else {
@@ -829,7 +900,6 @@
                     const idealSquareW = Math.ceil(Math.sqrt(totalArea));
                     targetW = Math.max(maxImgW + padding*2, idealSquareW);
                 }
-                
                 if(targetW < 1000) targetW = 1000;
                 if(targetW > 8000) targetW = 8000;
             }
