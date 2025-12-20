@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart AI Collage v3.0</title>
+  <title>Smart AI Collage v3.1 (Draggable & Zoom)</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     :root {
-      --primary: #8b5cf6; /* Violet */
+      --primary: #8b5cf6;
       --primary-hover: #7c3aed;
       --bg-dark: #18181b;
       --panel-bg: rgba(39, 39, 42, 0.9);
@@ -26,7 +26,6 @@
       display: flex;
     }
 
-    /* Layout */
     .app-container {
       display: flex;
       width: 100%;
@@ -44,12 +43,11 @@
       display: flex;
       flex-direction: column;
       gap: 20px;
-      overflow-y: auto; /* Scrollable */
-      z-index: 10;
+      overflow-y: auto;
+      z-index: 20; /* Higher than canvas */
       box-shadow: 5px 0 15px rgba(0,0,0,0.3);
     }
     
-    /* Scrollbar styling */
     .sidebar::-webkit-scrollbar { width: 6px; }
     .sidebar::-webkit-scrollbar-track { background: transparent; }
     .sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
@@ -102,9 +100,7 @@
       gap: 8px;
     }
 
-    .control-row {
-      margin-bottom: 12px;
-    }
+    .control-row { margin-bottom: 12px; }
     .control-row:last-child { margin-bottom: 0; }
 
     .control-header {
@@ -144,41 +140,61 @@
       outline: none;
     }
 
-    /* Main Area */
+    /* Main Area (Viewport) */
     .main-content {
       flex: 1;
       position: relative;
       background-color: #09090b;
       background-image: radial-gradient(#27272a 1px, transparent 1px);
       background-size: 20px 20px;
+      overflow: hidden; /* Hide overflow for custom pan/zoom */
+      cursor: grab;
+    }
+    .main-content:active { cursor: grabbing; }
+
+    /* The actual canvas container for transforming */
+    .canvas-container {
+      width: 100%;
+      height: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 40px;
-      overflow: hidden; /* Canvas handles scroll if needed or fit */
+      transform-origin: center center;
+      transition: transform 0.1s ease-out; /* Smooth zoom */
     }
 
     #previewCanvas {
       box-shadow: 0 0 50px rgba(0,0,0,0.7);
-      max-width: 95%;
-      max-height: 90vh;
-      object-fit: contain;
+      max-width: none; /* Let JS handle size */
     }
 
-    /* Floating Toolbar */
+    /* Draggable Toolbar */
     .toolbar {
       position: absolute;
       bottom: 30px;
       left: 50%;
-      transform: translateX(-50%);
+      /* removed transform translate for manual positioning */
       background: rgba(24, 24, 27, 0.95);
       backdrop-filter: blur(8px);
-      padding: 8px 16px;
+      padding: 10px 16px;
       border-radius: 16px;
       border: 1px solid var(--border);
       display: flex;
       gap: 12px;
       box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      z-index: 100;
+      cursor: move; /* Indicates draggable */
+      user-select: none;
+    }
+    
+    /* Drag Handle visual cue */
+    .toolbar::before {
+      content: '⋮';
+      color: #71717a;
+      font-size: 1.2rem;
+      margin-right: 5px;
+      display: flex;
+      align-items: center;
     }
 
     button {
@@ -195,6 +211,9 @@
       gap: 8px;
       font-size: 0.9rem;
     }
+    /* Stop button from triggering drag */
+    button { cursor: pointer; } 
+    
     button.primary { background: linear-gradient(135deg, var(--primary), var(--primary-hover)); }
     button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -213,6 +232,7 @@
       position: relative;
       border: 1px solid var(--border);
       background: #000;
+      cursor: pointer;
     }
     .mini-thumb img { width: 100%; height: 100%; object-fit: cover; opacity: 0.8; transition: 0.2s; }
     .mini-thumb:hover img { opacity: 0.4; }
@@ -226,8 +246,22 @@
       transition: 0.2s;
       font-size: 1.2rem;
       pointer-events: none;
+      color: white;
     }
     .mini-thumb:hover .remove-overlay { opacity: 1; }
+
+    /* Overlay controls */
+    .zoom-hint {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        background: rgba(0,0,0,0.5);
+        padding: 5px 10px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        color: #a1a1aa;
+        pointer-events: none;
+    }
 
   </style>
 </head>
@@ -295,9 +329,6 @@
             <span class="control-val" id="scaleVal">Auto</span>
           </div>
           <input type="range" id="imgScale" min="0" max="150" value="0">
-          <p style="font-size:0.7rem; color:#71717a; margin-top:5px;">
-            0 = Auto-calculate best fit. Increase to zoom in.
-          </p>
         </div>
       </div>
 
@@ -305,10 +336,13 @@
       <div class="img-list" id="imgList"></div>
     </div>
 
-    <div class="main-content">
-      <canvas id="previewCanvas"></canvas>
+    <div class="main-content" id="mainViewport">
+      <div class="zoom-hint">🖱️ Scroll to Zoom • Drag to Pan</div>
+      <div class="canvas-container" id="canvasContainer">
+        <canvas id="previewCanvas"></canvas>
+      </div>
       
-      <div class="toolbar">
+      <div class="toolbar" id="floatingToolbar">
         <button id="packBtn" class="primary">⚡ Re-Pack</button>
         <button id="downloadPng">💾 PNG</button>
         <button id="downloadPdf">📄 PDF</button>
@@ -319,7 +353,7 @@
 
   <script>
     /**
-     * SIMPLIFIED MAXRECTS (No Rotation)
+     * MAXRECTS ALGORITHM
      */
     class MaxRectsPacker {
         constructor(width, height) {
@@ -327,11 +361,8 @@
             this.binHeight = height;
             this.freeRectangles = [{ x: 0, y: 0, w: width, h: height }];
         }
-
         insert(width, height, data) {
-            // Find best fit using Best Short Side Fit
             let bestNode = { rect: null, score1: Infinity, score2: Infinity };
-            
             for (let i = 0; i < this.freeRectangles.length; i++) {
                 const freeRect = this.freeRectangles[i];
                 if (freeRect.w >= width && freeRect.h >= height) {
@@ -339,7 +370,6 @@
                     const leftoverVert = Math.abs(freeRect.h - height);
                     const shortSideFit = Math.min(leftoverHoriz, leftoverVert);
                     const longSideFit = Math.max(leftoverHoriz, leftoverVert);
-
                     if (shortSideFit < bestNode.score1 || (shortSideFit == bestNode.score1 && longSideFit < bestNode.score2)) {
                         bestNode.rect = { x: freeRect.x, y: freeRect.y, w: width, h: height };
                         bestNode.score1 = shortSideFit;
@@ -347,20 +377,12 @@
                     }
                 }
             }
-
             if (bestNode.rect) {
                 this.placeRect(bestNode.rect);
-                return {
-                    x: bestNode.rect.x,
-                    y: bestNode.rect.y,
-                    w: width,
-                    h: height,
-                    data: data
-                };
+                return { x: bestNode.rect.x, y: bestNode.rect.y, w: width, h: height, data: data };
             }
-            return null; // Won't fit
+            return null;
         }
-
         placeRect(rect) {
             const numRectsToProcess = this.freeRectangles.length;
             for (let i = 0; i < numRectsToProcess; i++) {
@@ -371,11 +393,9 @@
             }
             this.pruneFreeList();
         }
-
         splitFreeNode(freeNode, usedNode) {
             if (usedNode.x >= freeNode.x + freeNode.w || usedNode.x + usedNode.w <= freeNode.x ||
                 usedNode.y >= freeNode.y + freeNode.h || usedNode.y + usedNode.h <= freeNode.y) return false;
-
             if (usedNode.x < freeNode.x + freeNode.w && usedNode.x + usedNode.w > freeNode.x) {
                 if (usedNode.y > freeNode.y && usedNode.y < freeNode.y + freeNode.h) {
                     this.freeRectangles.push({ x: freeNode.x, y: freeNode.y, w: freeNode.w, h: usedNode.y - freeNode.y });
@@ -394,7 +414,6 @@
             }
             return true;
         }
-
         pruneFreeList() {
             for (let i = 0; i < this.freeRectangles.length; i++) {
                 for (let j = i + 1; j < this.freeRectangles.length; j++) {
@@ -415,15 +434,162 @@
         }
     }
 
-    // --- MAIN LOGIC ---
+    /**
+     * DRAGGABLE TOOLBAR LOGIC
+     */
+    class DraggableToolbar {
+        constructor(elementId) {
+            this.element = document.getElementById(elementId);
+            this.isDragging = false;
+            this.offsetX = 0;
+            this.offsetY = 0;
+            
+            // Set initial position centered
+            this.element.style.left = "50%";
+            this.element.style.transform = "translateX(-50%)"; // Initial center
+            this.element.style.bottom = "30px";
+
+            this.bindEvents();
+        }
+
+        bindEvents() {
+            this.element.addEventListener('mousedown', (e) => {
+                // Ignore if clicked on button
+                if(e.target.tagName === 'BUTTON') return;
+                
+                this.isDragging = true;
+                
+                // If it was centered with transform, we need to calculate exact pixels
+                // and switch to absolute positioning without transform
+                const rect = this.element.getBoundingClientRect();
+                this.element.style.transform = "none";
+                this.element.style.left = rect.left + "px";
+                this.element.style.top = rect.top + "px";
+                this.element.style.bottom = "auto";
+
+                this.offsetX = e.clientX - rect.left;
+                this.offsetY = e.clientY - rect.top;
+                this.element.style.cursor = 'grabbing';
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!this.isDragging) return;
+                e.preventDefault();
+                
+                let x = e.clientX - this.offsetX;
+                let y = e.clientY - this.offsetY;
+
+                // Simple boundaries
+                const winW = window.innerWidth;
+                const winH = window.innerHeight;
+                const elW = this.element.offsetWidth;
+                const elH = this.element.offsetHeight;
+
+                if(x < 0) x = 0;
+                if(y < 0) y = 0;
+                if(x + elW > winW) x = winW - elW;
+                if(y + elH > winH) y = winH - elH;
+
+                this.element.style.left = x + 'px';
+                this.element.style.top = y + 'px';
+            });
+
+            window.addEventListener('mouseup', () => {
+                this.isDragging = false;
+                this.element.style.cursor = 'move';
+            });
+        }
+    }
+
+    /**
+     * ZOOM AND PAN LOGIC
+     */
+    class PanZoomCanvas {
+        constructor(viewportId, containerId) {
+            this.viewport = document.getElementById(viewportId);
+            this.container = document.getElementById(containerId);
+            
+            this.scale = 1;
+            this.panning = false;
+            this.pointX = 0;
+            this.pointY = 0;
+            this.startX = 0;
+            this.startY = 0;
+
+            this.initScale();
+            this.bindEvents();
+        }
+
+        initScale() {
+            // Initial fit logic could go here, but CSS handles initial center
+            this.updateTransform();
+        }
+
+        bindEvents() {
+            // Zoom (Wheel)
+            this.viewport.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const xs = (e.clientX - this.pointX) / this.scale;
+                const ys = (e.clientY - this.pointY) / this.scale;
+                const delta = -e.deltaY;
+                
+                (delta > 0) ? (this.scale *= 1.1) : (this.scale /= 1.1);
+                
+                // Limits
+                if(this.scale < 0.1) this.scale = 0.1;
+                if(this.scale > 5) this.scale = 5;
+
+                this.updateTransform();
+            });
+
+            // Pan (Mouse Drag)
+            this.viewport.addEventListener('mousedown', (e) => {
+                // Don't drag if clicking the toolbar
+                if(e.target.closest('.toolbar')) return;
+
+                e.preventDefault();
+                this.startX = e.clientX - this.pointX;
+                this.startY = e.clientY - this.pointY;
+                this.panning = true;
+            });
+
+            this.viewport.addEventListener('mouseup', () => {
+                this.panning = false;
+            });
+            
+            this.viewport.addEventListener('mouseleave', () => {
+                this.panning = false;
+            });
+
+            this.viewport.addEventListener('mousemove', (e) => {
+                if(!this.panning) return;
+                e.preventDefault();
+                this.pointX = e.clientX - this.startX;
+                this.pointY = e.clientY - this.startY;
+                this.updateTransform();
+            });
+        }
+
+        updateTransform() {
+            this.container.style.transform = `translate(${this.pointX}px, ${this.pointY}px) scale(${this.scale})`;
+        }
+        
+        reset() {
+            this.scale = 1;
+            this.pointX = 0;
+            this.pointY = 0;
+            this.updateTransform();
+        }
+    }
+
+    // --- MAIN APP LOGIC ---
     class App {
         constructor() {
             this.images = []; 
-            this.layoutResult = []; // Store calculated positions
+            this.layoutResult = []; 
             this.canvas = document.getElementById('previewCanvas');
             this.ctx = this.canvas.getContext('2d');
             
-            // UI References
             this.ui = {
                 fileInput: document.getElementById('fileInput'),
                 dropZone: document.getElementById('dropZone'),
@@ -444,11 +610,14 @@
                 transparentBg: document.getElementById('transparentBg'),
             };
 
+            // Init Helpers
+            this.toolbarControl = new DraggableToolbar('floatingToolbar');
+            this.viewControl = new PanZoomCanvas('mainViewport', 'canvasContainer');
+
             this.bindEvents();
         }
 
         bindEvents() {
-            // Upload
             this.ui.dropZone.addEventListener('click', () => this.ui.fileInput.click());
             this.ui.fileInput.addEventListener('change', (e) => this.handleFiles(e.target.files));
             ['dragover', 'dragleave', 'drop'].forEach(e => {
@@ -460,7 +629,6 @@
                 });
             });
 
-            // Settings
             this.ui.canvasWidth.addEventListener('input', (e) => {
                 this.ui.widthVal.textContent = e.target.value + 'px';
                 this.schedulePack();
@@ -474,12 +642,9 @@
                 this.ui.scaleVal.textContent = e.target.value === '0' ? 'Auto' : e.target.value + '%';
                 this.schedulePack();
             });
-            
-            // Appearance (Just render, don't repack)
             this.ui.bgColor.addEventListener('input', () => this.render());
             this.ui.transparentBg.addEventListener('change', () => this.render());
 
-            // Buttons
             this.ui.packBtn.addEventListener('click', () => this.packImages());
             this.ui.clearBtn.addEventListener('click', () => this.clearAll());
             this.ui.downloadPng.addEventListener('click', () => this.download('png'));
@@ -492,7 +657,6 @@
                 if(!file.type.startsWith('image/')) continue;
                 try {
                     const img = await this.loadImage(file);
-                    // Add simple ID
                     newImages.push({ id: Date.now() + Math.random(), img, w: img.width, h: img.height });
                 } catch(e) { console.error(e); }
             }
@@ -516,24 +680,19 @@
         updateSidebarList() {
             this.ui.imgList.innerHTML = '';
             this.ui.imgCount.textContent = this.images.length;
-            
             this.images.forEach(data => {
                 const div = document.createElement('div');
                 div.className = 'mini-thumb';
-                div.innerHTML = `
-                    <img src="${data.img.src}">
-                    <div class="remove-overlay">🗑️</div>
-                `;
+                div.innerHTML = `<img src="${data.img.src}"><div class="remove-overlay">🗑️</div>`;
                 div.addEventListener('click', () => this.removeImage(data.id));
                 this.ui.imgList.appendChild(div);
             });
         }
 
         removeImage(id) {
-            // FIX: Completely remove from array then force update
             this.images = this.images.filter(img => img.id !== id);
             this.updateSidebarList();
-            this.packImages(); // Force repack to clear layoutResult cache
+            this.packImages();
         }
 
         clearAll() {
@@ -541,6 +700,7 @@
             this.layoutResult = [];
             this.updateSidebarList();
             this.ctx.clearRect(0,0,this.canvas.width, this.canvas.height);
+            this.viewControl.reset();
         }
 
         debounceTimer = null;
@@ -557,57 +717,40 @@
             const ratioSetting = this.ui.aspectRatio.value;
             const userScale = parseInt(this.ui.imgScale.value);
 
-            // 1. Determine Canvas Height Limit
-            let targetH = 99999; // Default infinite for 'auto'
+            let targetH = 99999; 
             let fixedRatio = false;
             
             if(ratioSetting !== 'auto') {
                 fixedRatio = true;
-                const ratio = parseFloat(ratioSetting); // width / height
+                const ratio = parseFloat(ratioSetting);
                 targetH = targetW / ratio;
             }
 
-            // 2. Sort Images (Biggest area first is usually best)
             let sorted = [...this.images].sort((a,b) => (b.w * b.h) - (a.w * a.h));
-
-            // 3. Calculate Scaling Factor
-            // If scale is 0 (Auto), we try to fit all image areas into the Target Area
             let globalScale = 1;
 
             if (userScale > 0) {
-                // Manual Scale
                 globalScale = userScale / 100;
             } else if (fixedRatio) {
-                // Auto Scale: Area-based heuristic
                 const totalImgArea = sorted.reduce((sum, img) => sum + (img.w * img.h), 0);
-                const targetArea = (targetW * targetH) * 0.9; // Target 90% fill
-                // sqrt(Target / Total) gives rough linear scale
+                const targetArea = (targetW * targetH) * 0.9;
                 globalScale = Math.sqrt(targetArea / totalImgArea);
-                
-                // Cap upscale to prevent pixelation (max 1.2x of original)
-                // But allow downscale as much as needed
                 if(globalScale > 1.2) globalScale = 1.2;
             } else {
-                // Auto Scale but Infinite Height:
-                // Just ensure no single image is wider than container
                 const maxImgW = Math.max(...sorted.map(i => i.w));
                 if(maxImgW > targetW) {
                     globalScale = (targetW - padding*2) / maxImgW;
                 }
             }
 
-            // 4. Prepare Items for Packer
             const layoutItems = sorted.map(img => {
                 let finalW = Math.floor(img.w * globalScale);
                 let finalH = Math.floor(img.h * globalScale);
-                
-                // Safety: ensure it fits width
                 if(finalW > targetW - padding) {
                     const shrink = (targetW - padding) / finalW;
                     finalW *= shrink;
                     finalH *= shrink;
                 }
-
                 return {
                     w: finalW + padding,
                     h: finalH + padding,
@@ -617,10 +760,7 @@
                 };
             });
 
-            // 5. Run Packer
-            // If fixed height, we use that. If 'auto', we use huge height.
             const packer = new MaxRectsPacker(targetW, fixedRatio ? targetH : 99999);
-            
             this.layoutResult = [];
             let maxY = 0;
 
@@ -629,47 +769,39 @@
                 if(node) {
                     this.layoutResult.push(node);
                     if(node.y + node.h > maxY) maxY = node.y + node.h;
-                } else {
-                    // Overflow handling: If 'fixedRatio', some images might be dropped 
-                    // or we could implement a multipage system, but here we just omit them.
-                    console.log("Image didn't fit:", item);
                 }
             });
 
-            // 6. Finalize Canvas
             this.canvas.width = targetW;
             this.canvas.height = fixedRatio ? targetH : maxY;
-            
             this.render();
+            
+            // Auto fit view slightly if it's huge, or just let user zoom
+            if(this.viewControl.scale === 1) {
+                 // Optional: Auto zoom-out if canvas is huge initially?
+                 // For now, let's keep 1:1 unless user zooms
+            }
         }
 
         render() {
-            // Clear
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
-            // Background
             if(!this.ui.transparentBg.checked) {
                 this.ctx.fillStyle = this.ui.bgColor.value;
                 this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
             }
-
-            // Draw content
             const padding = parseInt(this.ui.padding.value);
-            
             this.layoutResult.forEach(node => {
                 const img = node.data.original.img;
                 const x = node.x + padding/2;
                 const y = node.y + padding/2;
                 const w = node.data.drawW;
                 const h = node.data.drawH;
-
                 this.ctx.drawImage(img, x, y, w, h);
             });
         }
 
         download(type) {
             if(this.layoutResult.length === 0) return;
-            
             if(type === 'png') {
                 const link = document.createElement('a');
                 link.download = `collage-${Date.now()}.png`;
