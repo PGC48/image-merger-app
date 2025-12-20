@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart AI Collage v3.1 (Draggable & Zoom)</title>
+  <title>Smart AI Collage v3.2 (Auto-Fit Guarantee)</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     :root {
       --primary: #8b5cf6;
       --primary-hover: #7c3aed;
       --bg-dark: #18181b;
-      --panel-bg: rgba(39, 39, 42, 0.9);
+      --panel-bg: rgba(39, 39, 42, 0.95);
       --border: rgba(255, 255, 255, 0.1);
       --text: #e4e4e7;
     }
@@ -19,7 +19,7 @@
     
     body {
       font-family: 'Segoe UI', Inter, sans-serif;
-      background: linear-gradient(135deg, #18181b, #27272a);
+      background: linear-gradient(135deg, #18181b, #000000);
       color: var(--text);
       height: 100vh;
       overflow: hidden;
@@ -44,8 +44,8 @@
       flex-direction: column;
       gap: 20px;
       overflow-y: auto;
-      z-index: 20; /* Higher than canvas */
-      box-shadow: 5px 0 15px rgba(0,0,0,0.3);
+      z-index: 20; 
+      box-shadow: 5px 0 20px rgba(0,0,0,0.5);
     }
     
     .sidebar::-webkit-scrollbar { width: 6px; }
@@ -82,7 +82,7 @@
     
     /* Controls */
     .control-section {
-      background: rgba(0,0,0,0.2);
+      background: rgba(255,255,255,0.03);
       padding: 15px;
       border-radius: 12px;
       border: 1px solid rgba(255,255,255,0.05);
@@ -100,44 +100,46 @@
       gap: 8px;
     }
 
-    .control-row { margin-bottom: 12px; }
+    .control-row { margin-bottom: 15px; }
     .control-row:last-child { margin-bottom: 0; }
 
     .control-header {
       display: flex;
       justify-content: space-between;
       font-size: 0.9rem;
-      margin-bottom: 6px;
+      margin-bottom: 8px;
       color: #d4d4d8;
     }
-    .control-val { color: var(--primary); font-family: monospace; }
+    .control-val { color: var(--primary); font-family: monospace; font-weight: bold;}
     
     input[type="range"] {
       width: 100%;
-      height: 5px;
-      background: #52525b;
+      height: 6px;
+      background: #404040;
       border-radius: 3px;
       outline: none;
       -webkit-appearance: none;
     }
     input[type="range"]::-webkit-slider-thumb {
       -webkit-appearance: none;
-      width: 16px;
-      height: 16px;
+      width: 18px;
+      height: 18px;
       background: var(--primary);
       border-radius: 50%;
       cursor: pointer;
       box-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
+      border: 2px solid #fff;
     }
 
     select {
       width: 100%;
-      padding: 8px;
+      padding: 10px;
       background: #27272a;
       border: 1px solid #52525b;
       color: white;
-      border-radius: 6px;
+      border-radius: 8px;
       outline: none;
+      font-size: 0.9rem;
     }
 
     /* Main Area (Viewport) */
@@ -145,14 +147,15 @@
       flex: 1;
       position: relative;
       background-color: #09090b;
-      background-image: radial-gradient(#27272a 1px, transparent 1px);
-      background-size: 20px 20px;
-      overflow: hidden; /* Hide overflow for custom pan/zoom */
+      background-image: 
+        linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+      background-size: 40px 40px;
+      overflow: hidden;
       cursor: grab;
     }
     .main-content:active { cursor: grabbing; }
 
-    /* The actual canvas container for transforming */
     .canvas-container {
       width: 100%;
       height: 100%;
@@ -160,12 +163,12 @@
       align-items: center;
       justify-content: center;
       transform-origin: center center;
-      transition: transform 0.1s ease-out; /* Smooth zoom */
+      transition: transform 0.05s linear; /* Fast response */
     }
 
     #previewCanvas {
-      box-shadow: 0 0 50px rgba(0,0,0,0.7);
-      max-width: none; /* Let JS handle size */
+      box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+      max-width: none;
     }
 
     /* Draggable Toolbar */
@@ -173,25 +176,23 @@
       position: absolute;
       bottom: 30px;
       left: 50%;
-      /* removed transform translate for manual positioning */
-      background: rgba(24, 24, 27, 0.95);
-      backdrop-filter: blur(8px);
+      background: rgba(24, 24, 27, 0.9);
+      backdrop-filter: blur(12px);
       padding: 10px 16px;
       border-radius: 16px;
-      border: 1px solid var(--border);
+      border: 1px solid rgba(255,255,255,0.1);
       display: flex;
       gap: 12px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      box-shadow: 0 10px 40px rgba(0,0,0,0.6);
       z-index: 100;
-      cursor: move; /* Indicates draggable */
+      cursor: move;
       user-select: none;
     }
     
-    /* Drag Handle visual cue */
     .toolbar::before {
       content: '⋮';
       color: #71717a;
-      font-size: 1.2rem;
+      font-size: 1.5rem;
       margin-right: 5px;
       display: flex;
       align-items: center;
@@ -211,11 +212,10 @@
       gap: 8px;
       font-size: 0.9rem;
     }
-    /* Stop button from triggering drag */
     button { cursor: pointer; } 
     
     button.primary { background: linear-gradient(135deg, var(--primary), var(--primary-hover)); }
-    button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+    button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); filter: brightness(1.1); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     button.danger { background: #dc2626; color: white; }
 
@@ -256,12 +256,28 @@
         top: 20px;
         right: 20px;
         background: rgba(0,0,0,0.5);
-        padding: 5px 10px;
+        padding: 6px 12px;
         border-radius: 20px;
         font-size: 0.8rem;
         color: #a1a1aa;
         pointer-events: none;
+        backdrop-filter: blur(4px);
     }
+    
+    .reset-view-btn {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        background: rgba(0,0,0,0.5);
+        border: 1px solid rgba(255,255,255,0.1);
+        padding: 8px;
+        border-radius: 8px;
+        color: #fff;
+        font-size: 1.2rem;
+        cursor: pointer;
+        z-index: 50;
+    }
+    .reset-view-btn:hover { background: rgba(255,255,255,0.1); }
 
   </style>
 </head>
@@ -269,7 +285,7 @@
 
   <div class="app-container">
     <div class="sidebar">
-      <div class="logo">🚀 AI Collage Pro</div>
+      <div class="logo">🚀 AI Collage Pro <span style="font-size:0.7em; margin-left:auto; color:#555;">v3.2</span></div>
       
       <div class="upload-box" id="dropZone">
         <span class="upload-icon">📥</span>
@@ -284,12 +300,15 @@
         <div class="control-row">
           <label class="control-header">Paper Shape</label>
           <select id="aspectRatio">
-            <option value="auto">Auto (Fit Content)</option>
+            <option value="auto">Auto (Infinite Length)</option>
             <option value="1">Square (1:1)</option>
             <option value="0.666">Portrait (2:3)</option>
             <option value="0.75">Portrait (3:4)</option>
+            <option value="0.707">A4 Portrait</option>
+            <option value="1.414">A4 Landscape</option>
             <option value="1.5">Landscape (3:2)</option>
             <option value="1.333">Landscape (4:3)</option>
+            <option value="1.777">Widescreen (16:9)</option>
           </select>
         </div>
 
@@ -317,7 +336,7 @@
         
         <div class="control-row">
           <div class="control-header">
-            <span>Image Gap</span>
+            <span>Image Gap (Padding)</span>
             <span class="control-val" id="padVal">10px</span>
           </div>
           <input type="range" id="padding" min="0" max="100" value="10">
@@ -325,10 +344,13 @@
 
          <div class="control-row">
           <div class="control-header">
-            <span>Image Scale</span>
-            <span class="control-val" id="scaleVal">Auto</span>
+            <span>Max Zoom Scale</span>
+            <span class="control-val" id="scaleVal">Fit</span>
           </div>
-          <input type="range" id="imgScale" min="0" max="150" value="0">
+          <input type="range" id="imgScale" min="10" max="150" value="0">
+          <p style="font-size:0.7rem; color:#71717a; margin-top:5px;">
+            0 = Auto Fit (Prevent Clipping).
+          </p>
         </div>
       </div>
 
@@ -338,6 +360,8 @@
 
     <div class="main-content" id="mainViewport">
       <div class="zoom-hint">🖱️ Scroll to Zoom • Drag to Pan</div>
+      <button class="reset-view-btn" id="resetViewBtn" title="Reset View">⛶</button>
+      
       <div class="canvas-container" id="canvasContainer">
         <canvas id="previewCanvas"></canvas>
       </div>
@@ -346,14 +370,14 @@
         <button id="packBtn" class="primary">⚡ Re-Pack</button>
         <button id="downloadPng">💾 PNG</button>
         <button id="downloadPdf">📄 PDF</button>
-        <button id="clearBtn" class="danger">🗑️ Clear All</button>
+        <button id="clearBtn" class="danger">🗑️ Clear</button>
       </div>
     </div>
   </div>
 
   <script>
     /**
-     * MAXRECTS ALGORITHM
+     * MAXRECTS BIN PACKING
      */
     class MaxRectsPacker {
         constructor(width, height) {
@@ -435,7 +459,7 @@
     }
 
     /**
-     * DRAGGABLE TOOLBAR LOGIC
+     * DRAGGABLE TOOLBAR
      */
     class DraggableToolbar {
         constructor(elementId) {
@@ -443,146 +467,102 @@
             this.isDragging = false;
             this.offsetX = 0;
             this.offsetY = 0;
-            
-            // Set initial position centered
             this.element.style.left = "50%";
-            this.element.style.transform = "translateX(-50%)"; // Initial center
+            this.element.style.transform = "translateX(-50%)";
             this.element.style.bottom = "30px";
-
             this.bindEvents();
         }
-
         bindEvents() {
             this.element.addEventListener('mousedown', (e) => {
-                // Ignore if clicked on button
                 if(e.target.tagName === 'BUTTON') return;
-                
                 this.isDragging = true;
-                
-                // If it was centered with transform, we need to calculate exact pixels
-                // and switch to absolute positioning without transform
                 const rect = this.element.getBoundingClientRect();
                 this.element.style.transform = "none";
                 this.element.style.left = rect.left + "px";
                 this.element.style.top = rect.top + "px";
                 this.element.style.bottom = "auto";
-
                 this.offsetX = e.clientX - rect.left;
                 this.offsetY = e.clientY - rect.top;
                 this.element.style.cursor = 'grabbing';
             });
-
             window.addEventListener('mousemove', (e) => {
                 if (!this.isDragging) return;
                 e.preventDefault();
-                
                 let x = e.clientX - this.offsetX;
                 let y = e.clientY - this.offsetY;
-
-                // Simple boundaries
-                const winW = window.innerWidth;
-                const winH = window.innerHeight;
-                const elW = this.element.offsetWidth;
-                const elH = this.element.offsetHeight;
-
-                if(x < 0) x = 0;
-                if(y < 0) y = 0;
-                if(x + elW > winW) x = winW - elW;
-                if(y + elH > winH) y = winH - elH;
-
+                const winW = window.innerWidth, winH = window.innerHeight;
+                const elW = this.element.offsetWidth, elH = this.element.offsetHeight;
+                if(x < 0) x = 0; if(y < 0) y = 0;
+                if(x + elW > winW) x = winW - elW; if(y + elH > winH) y = winH - elH;
                 this.element.style.left = x + 'px';
                 this.element.style.top = y + 'px';
             });
-
-            window.addEventListener('mouseup', () => {
-                this.isDragging = false;
-                this.element.style.cursor = 'move';
-            });
+            window.addEventListener('mouseup', () => { this.isDragging = false; this.element.style.cursor = 'move'; });
         }
     }
 
     /**
-     * ZOOM AND PAN LOGIC
+     * ZOOM AND PAN
      */
     class PanZoomCanvas {
         constructor(viewportId, containerId) {
             this.viewport = document.getElementById(viewportId);
             this.container = document.getElementById(containerId);
-            
             this.scale = 1;
             this.panning = false;
             this.pointX = 0;
             this.pointY = 0;
             this.startX = 0;
             this.startY = 0;
-
-            this.initScale();
             this.bindEvents();
         }
-
-        initScale() {
-            // Initial fit logic could go here, but CSS handles initial center
-            this.updateTransform();
-        }
-
         bindEvents() {
-            // Zoom (Wheel)
             this.viewport.addEventListener('wheel', (e) => {
                 e.preventDefault();
-                const xs = (e.clientX - this.pointX) / this.scale;
-                const ys = (e.clientY - this.pointY) / this.scale;
                 const delta = -e.deltaY;
-                
                 (delta > 0) ? (this.scale *= 1.1) : (this.scale /= 1.1);
-                
-                // Limits
-                if(this.scale < 0.1) this.scale = 0.1;
-                if(this.scale > 5) this.scale = 5;
-
+                if(this.scale < 0.05) this.scale = 0.05;
+                if(this.scale > 10) this.scale = 10;
                 this.updateTransform();
             });
-
-            // Pan (Mouse Drag)
             this.viewport.addEventListener('mousedown', (e) => {
-                // Don't drag if clicking the toolbar
-                if(e.target.closest('.toolbar')) return;
-
+                if(e.target.closest('.toolbar') || e.target.closest('.reset-view-btn')) return;
                 e.preventDefault();
                 this.startX = e.clientX - this.pointX;
                 this.startY = e.clientY - this.pointY;
                 this.panning = true;
             });
-
-            this.viewport.addEventListener('mouseup', () => {
-                this.panning = false;
-            });
-            
-            this.viewport.addEventListener('mouseleave', () => {
-                this.panning = false;
-            });
-
-            this.viewport.addEventListener('mousemove', (e) => {
+            window.addEventListener('mouseup', () => { this.panning = false; });
+            window.addEventListener('mousemove', (e) => {
                 if(!this.panning) return;
                 e.preventDefault();
                 this.pointX = e.clientX - this.startX;
                 this.pointY = e.clientY - this.startY;
                 this.updateTransform();
             });
+            document.getElementById('resetViewBtn').addEventListener('click', () => this.reset());
         }
-
         updateTransform() {
             this.container.style.transform = `translate(${this.pointX}px, ${this.pointY}px) scale(${this.scale})`;
         }
-        
         reset() {
-            this.scale = 1;
+            this.scale = 0.8; // slightly zoomed out to see whole canvas
             this.pointX = 0;
             this.pointY = 0;
             this.updateTransform();
         }
+        autoFit() {
+             // Heuristic to center logic on repack
+             // Assuming canvas container centers itself via flexbox, we just reset offsets
+             this.pointX = 0; 
+             this.pointY = 0;
+             // Don't change scale forcefully unless it's way off
+             if(this.scale < 0.1 || this.scale > 5) this.scale = 0.5;
+             this.updateTransform();
+        }
     }
 
-    // --- MAIN APP LOGIC ---
+    // --- MAIN APP ---
     class App {
         constructor() {
             this.images = []; 
@@ -610,7 +590,6 @@
                 transparentBg: document.getElementById('transparentBg'),
             };
 
-            // Init Helpers
             this.toolbarControl = new DraggableToolbar('floatingToolbar');
             this.viewControl = new PanZoomCanvas('mainViewport', 'canvasContainer');
 
@@ -639,7 +618,8 @@
                 this.schedulePack();
             });
             this.ui.imgScale.addEventListener('input', (e) => {
-                this.ui.scaleVal.textContent = e.target.value === '0' ? 'Auto' : e.target.value + '%';
+                const val = e.target.value;
+                this.ui.scaleVal.textContent = val === '0' ? 'Fit' : val + '%';
                 this.schedulePack();
             });
             this.ui.bgColor.addEventListener('input', () => this.render());
@@ -662,7 +642,7 @@
             }
             this.images = [...this.images, ...newImages];
             this.updateSidebarList();
-            this.packImages();
+            this.packImages(true); // True = reset view for new images
         }
 
         loadImage(file) {
@@ -706,10 +686,14 @@
         debounceTimer = null;
         schedulePack() {
             clearTimeout(this.debounceTimer);
-            this.debounceTimer = setTimeout(() => this.packImages(), 300);
+            this.debounceTimer = setTimeout(() => this.packImages(), 200);
         }
 
-        packImages() {
+        /**
+         * CORE LOGIC: ITERATIVE PACKING
+         * Ensures all images fit by reducing scale if necessary
+         */
+        packImages(resetView = false) {
             if(this.images.length === 0) return;
 
             const targetW = parseInt(this.ui.canvasWidth.value);
@@ -727,60 +711,93 @@
             }
 
             let sorted = [...this.images].sort((a,b) => (b.w * b.h) - (a.w * a.h));
+            
+            // Initial Scale Calculation
             let globalScale = 1;
-
             if (userScale > 0) {
                 globalScale = userScale / 100;
             } else if (fixedRatio) {
+                // Heuristic: Estimate area needed
                 const totalImgArea = sorted.reduce((sum, img) => sum + (img.w * img.h), 0);
-                const targetArea = (targetW * targetH) * 0.9;
+                const targetArea = (targetW * targetH) * 0.85; // Aim for 85% fill
                 globalScale = Math.sqrt(targetArea / totalImgArea);
-                if(globalScale > 1.2) globalScale = 1.2;
+                if(globalScale > 1.2) globalScale = 1.2; 
             } else {
                 const maxImgW = Math.max(...sorted.map(i => i.w));
-                if(maxImgW > targetW) {
-                    globalScale = (targetW - padding*2) / maxImgW;
-                }
+                if(maxImgW > targetW) globalScale = (targetW - padding*2) / maxImgW;
             }
 
-            const layoutItems = sorted.map(img => {
-                let finalW = Math.floor(img.w * globalScale);
-                let finalH = Math.floor(img.h * globalScale);
-                if(finalW > targetW - padding) {
-                    const shrink = (targetW - padding) / finalW;
-                    finalW *= shrink;
-                    finalH *= shrink;
-                }
-                return {
-                    w: finalW + padding,
-                    h: finalH + padding,
-                    drawW: finalW,
-                    drawH: finalH,
-                    original: img
-                };
-            });
-
-            const packer = new MaxRectsPacker(targetW, fixedRatio ? targetH : 99999);
-            this.layoutResult = [];
-            let maxY = 0;
-
-            layoutItems.forEach(item => {
-                const node = packer.insert(item.w, item.h, item);
-                if(node) {
-                    this.layoutResult.push(node);
-                    if(node.y + node.h > maxY) maxY = node.y + node.h;
-                }
-            });
-
-            this.canvas.width = targetW;
-            this.canvas.height = fixedRatio ? targetH : maxY;
-            this.render();
+            // Retry Loop: If not all images fit, reduce scale and try again
+            let success = false;
+            let attempts = 0;
+            let bestResult = null;
+            let bestMaxY = 0;
             
-            // Auto fit view slightly if it's huge, or just let user zoom
-            if(this.viewControl.scale === 1) {
-                 // Optional: Auto zoom-out if canvas is huge initially?
-                 // For now, let's keep 1:1 unless user zooms
+            // Only loop if we are constrained by height (Fixed Ratio)
+            // If Auto height, one pass is usually enough unless width is crazy small
+            const maxAttempts = fixedRatio ? 20 : 1; 
+
+            while(!success && attempts < maxAttempts) {
+                
+                // 1. Prepare items with current globalScale
+                const layoutItems = sorted.map(img => {
+                    let finalW = Math.floor(img.w * globalScale);
+                    let finalH = Math.floor(img.h * globalScale);
+                    
+                    // Safety: Ensure it never exceeds width even if scale implies it
+                    if(finalW > targetW - padding) {
+                        const shrink = (targetW - padding) / finalW;
+                        finalW *= shrink;
+                        finalH *= shrink;
+                    }
+                    return {
+                        w: finalW + padding,
+                        h: finalH + padding,
+                        drawW: finalW,
+                        drawH: finalH,
+                        original: img
+                    };
+                });
+
+                // 2. Try Packing
+                const packer = new MaxRectsPacker(targetW, fixedRatio ? targetH : 999999);
+                let currentResult = [];
+                let currentMaxY = 0;
+                let allFit = true;
+
+                for(let item of layoutItems) {
+                    const node = packer.insert(item.w, item.h, item);
+                    if(node) {
+                        currentResult.push(node);
+                        if(node.y + node.h > currentMaxY) currentMaxY = node.y + node.h;
+                    } else {
+                        allFit = false;
+                        break; // Stop this attempt early
+                    }
+                }
+
+                if(allFit) {
+                    success = true;
+                    bestResult = currentResult;
+                    bestMaxY = currentMaxY;
+                } else {
+                    // Reduce scale for next attempt
+                    globalScale *= 0.90; // Decrease by 10%
+                    attempts++;
+                }
             }
+            
+            // If we ran out of attempts, use whatever partial result we have (or the last best)
+            // But ideally, the loop guarantees fit unless scale becomes microscopic.
+            this.layoutResult = bestResult || [];
+            
+            // Update Canvas Dimensions
+            this.canvas.width = targetW;
+            this.canvas.height = fixedRatio ? targetH : bestMaxY;
+            
+            this.render();
+
+            if(resetView) this.viewControl.autoFit();
         }
 
         render() {
