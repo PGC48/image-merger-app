@@ -351,7 +351,7 @@
       <div class="upload-box" id="dropZone">
         <div style="font-size:2rem; margin-bottom:5px;">📷</div>
         <div>Add Images</div>
-        <div style="font-size:0.75rem; opacity:0.7;">Click or Drag & Drop</div>
+        <div style="font-size:0.75rem; opacity:0.7;">Click or Drag & Drop / Paste</div>
         <input type="file" id="fileInput" multiple accept="image/*" style="display:none">
       </div>
 
@@ -785,6 +785,52 @@
         bindEvents() {
             this.ui.dropZone.addEventListener('click', () => this.ui.fileInput.click());
             this.ui.fileInput.addEventListener('change', (e) => this.handleFiles(e.target.files));
+
+            // --- ADDED: Drag & Drop Support ---
+            let dragCounter = 0;
+            this.ui.dropZone.addEventListener('dragenter', (e) => {
+                e.preventDefault();
+                dragCounter++;
+                this.ui.dropZone.style.borderColor = 'var(--primary)';
+                this.ui.dropZone.style.background = 'rgba(59, 130, 246, 0.05)';
+            });
+            this.ui.dropZone.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                dragCounter--;
+                if(dragCounter === 0) {
+                    this.ui.dropZone.style.borderColor = '';
+                    this.ui.dropZone.style.background = '';
+                }
+            });
+            this.ui.dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault(); // Necessary to allow drop
+            });
+            this.ui.dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dragCounter = 0;
+                this.ui.dropZone.style.borderColor = '';
+                this.ui.dropZone.style.background = '';
+                
+                if(e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    this.handleFiles(e.dataTransfer.files);
+                }
+            });
+
+            // --- ADDED: Paste Support (Ctrl+V) ---
+            window.addEventListener('paste', (e) => {
+                if(e.clipboardData && e.clipboardData.items) {
+                    const files = [];
+                    for(let item of e.clipboardData.items) {
+                        if(item.type.startsWith('image/')) {
+                            files.push(item.getAsFile());
+                        }
+                    }
+                    if(files.length > 0) {
+                        e.preventDefault();
+                        this.handleFiles(files);
+                    }
+                }
+            });
 
             this.ui.canvasWidth.addEventListener('input', (e) => {
                 const val = parseInt(e.target.value);
